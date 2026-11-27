@@ -8,12 +8,13 @@ import { useAppStore } from '../../store/useAppStore';
 
 export function LandingPage() {
   const navigate = useNavigate();
+  const isAuthenticated = useAppStore((s) => s.isAuthenticated);
   const trigger55PercentDemo = useAppStore((s) => s.trigger55PercentDemo);
   const [heroImgFailed, setHeroImgFailed] = useState(false);
 
   const handleLaunchDemo = () => {
     trigger55PercentDemo();
-    navigate('/app');
+    navigate(isAuthenticated ? '/app' : '/auth?mode=register');
   };
 
   return (
@@ -62,9 +63,11 @@ export function LandingPage() {
             <RippleButton
               variant="primary"
               size="sm"
-              onClick={() => navigate('/app')}
+              onClick={() =>
+                navigate(isAuthenticated ? '/app' : '/auth?mode=login')
+              }
             >
-              Open Dashboard
+              {isAuthenticated ? 'Open Dashboard' : 'Sign In'}
             </RippleButton>
           </div>
         </div>
@@ -76,9 +79,9 @@ export function LandingPage() {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-stretch">
             <div className="lg:col-span-6 flex flex-col justify-center space-y-6">
               <div className="flex items-center gap-2 text-xs text-[var(--cs-muted)]">
-                <span>Bengaluru – Mysuru Corridor Pilot</span>
+                <span>Bengaluru – Mysuru Corridor</span>
                 <span aria-hidden="true">·</span>
-                <DemoLabel kind="demo" />
+                <DemoLabel kind="live" />
               </div>
 
               <h1
@@ -94,8 +97,8 @@ export function LandingPage() {
               <p className="text-base sm:text-lg text-[var(--cs-muted)] max-w-xl leading-relaxed">
                 ChargeSense replaces separate charger, map, vehicle, service, and
                 insurance apps with a deterministic decision layer built for
-                Indian EV drivers. See real reachable range bands, filter out
-                incompatible or flaky stations, and verify every record.
+                Indian EV drivers. Combines live OpenStreetMap chargers, OSRM road
+                routes, Open-Meteo weather, and Cloud Firestore records.
               </p>
 
               <div className="flex flex-wrap items-center gap-3 pt-2">
@@ -104,16 +107,22 @@ export function LandingPage() {
                   size="lg"
                   onClick={handleLaunchDemo}
                 >
-                  <span>Try 55% Battery Demo</span>
+                  <span>
+                    {isAuthenticated
+                      ? 'Test 55% Battery Scenario'
+                      : 'Register to Get Started'}
+                  </span>
                   <ArrowRight className="w-4 h-4" />
                 </RippleButton>
 
                 <RippleButton
                   variant="tonal"
                   size="lg"
-                  onClick={() => navigate('/onboarding')}
+                  onClick={() =>
+                    navigate(isAuthenticated ? '/onboarding' : '/auth?mode=login')
+                  }
                 >
-                  <span>Add Your EV</span>
+                  <span>{isAuthenticated ? 'Add Your EV' : 'Sign In'}</span>
                 </RippleButton>
               </div>
             </div>
@@ -135,13 +144,13 @@ export function LandingPage() {
                       Bengaluru–Mysuru EV Corridor
                     </p>
                     <p className="text-sm text-[var(--cs-muted)] mt-1">
-                      143 km expressway pilot with 66 seeded stations
+                      143 km expressway with live OpenStreetMap Overpass stations
                     </p>
                   </div>
                 )}
                 <div className="absolute inset-x-0 bottom-0 p-5 bg-gradient-to-t from-black/80 via-black/40 to-transparent text-white">
                   <p className="text-xs text-white/80">
-                    NH-275 Pilot Simulation · 66 Fictional Stations
+                    NH-275 Live Corridor · OpenStreetMap + OSRM + Cloud Firestore
                   </p>
                   <p className="font-display text-base font-semibold mt-0.5">
                     Connector-safe, reliability-scored corridor intelligence
@@ -154,9 +163,9 @@ export function LandingPage() {
           {/* 4-Column Quantitative Proof Strip */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-10">
             {[
-              { label: 'Pilot Corridor', value: '143 km', sub: 'Bengaluru → Mysuru' },
-              { label: 'Seeded Stations', value: '66 hubs', sub: 'Fictional demo operators' },
-              { label: 'Ranking Latency', value: '< 10 ms', sub: 'Deterministic client engine' },
+              { label: 'Corridor Span', value: '143 km', sub: 'Bengaluru → Mysuru' },
+              { label: 'Charger Feed', value: 'Live OSM', sub: 'Overpass API + check-ins' },
+              { label: 'Routing & Weather', value: 'OSRM + Meteo', sub: 'Real routes & ambient temp' },
               { label: 'Safety Reserve', value: '20%', sub: 'Configurable SoC buffer' },
             ].map((stat) => (
               <TonalCard key={stat.label} padding="sm" tone="surface-1">
@@ -298,15 +307,16 @@ export function LandingPage() {
                   Ready to inspect the 55% battery scenario?
                 </h2>
                 <p className="text-sm text-[var(--cs-muted)]">
-                  No account sign-up required. All station inventories and live
-                  vehicle controls are clearly labelled demo simulations running
-                  locally in your browser.
+                  Register and sign in with Google or email to manage your EV
+                  garage, explore live OpenStreetMap chargers and OSRM routes,
+                  and store records in Cloud Firestore. Hardware-dependent
+                  cockpit toggles remain clearly labelled Simulated.
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-3 shrink-0">
                 <RippleButton variant="primary" size="lg" onClick={handleLaunchDemo}>
-                  Launch 55% Demo
+                  {isAuthenticated ? 'Test 55% Battery' : 'Register & Get Started'}
                 </RippleButton>
                 <RippleButton
                   variant="tonal"
@@ -323,13 +333,13 @@ export function LandingPage() {
 
       <footer className="border-t border-[var(--cs-outline)] py-6 px-6">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[var(--cs-muted)]">
-          <span>ChargeSense · EV Intelligence &amp; Ownership OS (Pilot Demo)</span>
+          <span>ChargeSense · EV Intelligence &amp; Ownership OS</span>
           <div className="flex items-center gap-5">
             <Link to="/app" className="hover:text-[var(--cs-text)]">
               Dashboard
             </Link>
             <Link to="/onboarding" className="hover:text-[var(--cs-text)]">
-              Onboarding
+              Profile &amp; Garage
             </Link>
             <Link to="/about" className="hover:text-[var(--cs-text)]">
               About &amp; Limitations

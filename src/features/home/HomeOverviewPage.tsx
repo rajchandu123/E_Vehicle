@@ -1,12 +1,15 @@
 import {
   AlertTriangle,
   BatteryCharging,
+  CloudSun,
   Compass,
+  Plus,
+  RefreshCw,
   ShieldCheck,
   SlidersHorizontal,
   Zap,
 } from 'lucide-react';
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DemoLabel } from '../../components/DemoBadge';
 import { M3Switch } from '../../components/M3Switch';
@@ -14,6 +17,7 @@ import { RippleButton } from '../../components/RippleButton';
 import { CardSkeleton } from '../../components/Skeleton';
 import { SocRing } from '../../components/SocRing';
 import { TonalCard } from '../../components/TonalCard';
+import { SEED_VEHICLES } from '../../data/seed/vehicles';
 import { recommendStations } from '../../domain/recommendation';
 import { DriveMode } from '../../domain/types';
 import { BENGALURU_ORIGIN } from '../../services/orchestrators';
@@ -26,15 +30,21 @@ export function HomeOverviewPage() {
     activeUser,
     activeVehicle,
     stations,
+    stationsError,
+    refreshLiveStations,
+    weather,
     rangeInput,
     rangeBand,
     preset,
     updateRangeInput,
     trigger55PercentDemo,
+    addVehicleAndSelect,
   } = useAppStore();
 
+  const [addingTpl, setAddingTpl] = useState(false);
+
   const report = useMemo(() => {
-    if (!activeVehicle || !rangeBand) return null;
+    if (!activeVehicle || !rangeBand || stations.length === 0) return null;
     return recommendStations(activeVehicle, stations, {
       origin: BENGALURU_ORIGIN,
       rangeBand,
@@ -43,11 +53,69 @@ export function HomeOverviewPage() {
     });
   }, [activeVehicle, rangeBand, stations, preset]);
 
-  if (loading || !activeVehicle || !rangeBand) {
+  const handleQuickAdd = async (idx: number) => {
+    const tpl = SEED_VEHICLES[idx];
+    if (!tpl) return;
+    setAddingTpl(true);
+    try {
+      const { id: _ignored, ...rest } = tpl;
+      await addVehicleAndSelect(rest);
+    } finally {
+      setAddingTpl(false);
+    }
+  };
+
+  if (loading) {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <CardSkeleton />
         <CardSkeleton />
+      </div>
+    );
+  }
+
+  if (!activeVehicle || !rangeBand) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <DemoLabel kind="cloud" />
+          <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight mt-1">
+            Welcome, {activeUser?.name ?? 'Driver'}
+          </h1>
+          <p className="text-sm text-[var(--cs-muted)] mt-1">
+            Add your first electric vehicle to your Cloud Firestore garage to activate range bands, connector filtering, and trip planning.
+          </p>
+        </div>
+
+        <TonalCard className="space-y-4">
+          <h2 className="font-display text-lg font-semibold">
+            Quick-Add Indian EV Specification or Register Custom Vehicle
+          </h2>
+          <div className="flex flex-wrap gap-2.5">
+            {SEED_VEHICLES.map((tpl, idx) => (
+              <RippleButton
+                key={tpl.id}
+                variant="tonal"
+                size="sm"
+                disabled={addingTpl}
+                onClick={() => void handleQuickAdd(idx)}
+              >
+                <Plus className="w-4 h-4" />
+                <span>
+                  {tpl.make} {tpl.model} ({tpl.usableKwh} kWh)
+                </span>
+              </RippleButton>
+            ))}
+          </div>
+          <div className="pt-2 border-t border-[var(--cs-outline)]">
+            <RippleButton
+              variant="primary"
+              onClick={() => navigate('/onboarding')}
+            >
+              Open Full Garage Setup
+            </RippleButton>
+          </div>
+        </TonalCard>
       </div>
     );
   }
@@ -57,12 +125,21 @@ export function HomeOverviewPage() {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-xs text-[var(--cs-muted)]">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--cs-muted)]">
             <span>{activeUser?.name ?? 'Driver'}</span>
             <span aria-hidden="true">·</span>
             <span>{activeVehicle.registrationNumber}</span>
             <span aria-hidden="true">·</span>
-            <DemoLabel kind="simulated" />
+            <DemoLabel kind="cloud" />
+            {weather && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="inline-flex items-center gap-1 text-[var(--cs-text)] tabular-nums">
+                  <CloudSun className="w-3.5 h-3.5 text-[var(--cs-primary)]" />
+                  {weather.temperatureC}°C corridor ambient
+                </span>
+              </>
+            )}
           </div>
           <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight mt-1">
             {activeVehicle.make} {activeVehicle.model}
@@ -75,7 +152,7 @@ export function HomeOverviewPage() {
             size="sm"
             onClick={trigger55PercentDemo}
           >
-            Set 55% Battery Demo
+            Set 55% Scenario
           </RippleButton>
           <RippleButton
             variant="tonal"
@@ -144,7 +221,9 @@ export function HomeOverviewPage() {
                     <span key={f.label}>
                       {f.label}:{' '}
                       <strong className="text-[var(--cs-text)] font-medium">
-                        {f.impactPercent > 0 ? `+${f.impactPercent}%` : `${f.impactPercent}%`}
+                        {f.impactPercent > 0
+                          ? `+${f.impactPercent}%`
+                          : `${f.impactPercent}%`}
                       </strong>
                     </span>
                   ))}
@@ -170,7 +249,7 @@ export function HomeOverviewPage() {
             <div>
               <div className="flex justify-between text-xs mb-1.5 tabular-nums">
                 <label htmlFor="soc-slider" className="text-[var(--cs-muted)]">
-                  Simulated Battery SoC
+                  Battery SoC Input
                 </label>
                 <span className="font-semibold text-[var(--cs-text)]">
                   {rangeInput.socPercent}% ({rangeBand.usableEnergyKwh} kWh)
@@ -261,13 +340,17 @@ export function HomeOverviewPage() {
               checked={rangeInput.acOn}
               onChange={(checked) => updateRangeInput({ acOn: checked })}
               label="Cabin Climate (AC)"
-              description={`Ambient ${rangeInput.ambientTempC}°C`}
+              description={
+                weather
+                  ? `Live Open-Meteo ambient ${rangeInput.ambientTempC}°C`
+                  : `Ambient ${rangeInput.ambientTempC}°C`
+              }
             />
           </div>
         </TonalCard>
       </div>
 
-      {/* Live Preview of Compatible & Reachable Stations from Domain Engine */}
+      {/* Live OpenStreetMap Stations + Firestore Reliability Recommendations */}
       <TonalCard className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
@@ -276,20 +359,36 @@ export function HomeOverviewPage() {
               <h2 className="font-display text-lg font-semibold">
                 Top Compatible &amp; Reachable Chargers
               </h2>
-              <DemoLabel kind="demo" />
+              <DemoLabel kind="live" />
             </div>
             <p className="text-xs text-[var(--cs-muted)] mt-0.5 tabular-nums">
-              {report?.summary} ({report?.computationMs} ms)
+              {report
+                ? `${report.summary} (${report.computationMs} ms)`
+                : stationsError
+                ? stationsError
+                : 'Loading live OpenStreetMap Overpass stations...'}
             </p>
           </div>
 
-          <RippleButton
-            variant="tonal"
-            size="sm"
-            onClick={() => navigate('/app/charging')}
-          >
-            Open Charging Map (Phase 2)
-          </RippleButton>
+          <div className="flex items-center gap-2">
+            {stationsError && (
+              <RippleButton
+                variant="secondary"
+                size="sm"
+                onClick={() => void refreshLiveStations(true)}
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Retry Live Sync</span>
+              </RippleButton>
+            )}
+            <RippleButton
+              variant="tonal"
+              size="sm"
+              onClick={() => navigate('/app/charging')}
+            >
+              Open Charging Map
+            </RippleButton>
+          </div>
         </div>
 
         {report && report.recommendations.length > 0 ? (
@@ -354,8 +453,9 @@ export function HomeOverviewPage() {
                 No compatible stations reachable
               </p>
               <p className="text-xs text-[var(--cs-muted)] mt-1">
-                {report?.summary} Increase simulated SoC or reduce safety buffer
-                to inspect corridor options.
+                {stationsError ??
+                  report?.summary ??
+                  'Increase SoC or reduce safety buffer to inspect corridor options.'}
               </p>
             </div>
           </div>
@@ -370,13 +470,14 @@ export function HomeOverviewPage() {
               <BatteryCharging className="w-4 h-4 text-[var(--cs-primary)]" />
               Battery SoH
             </span>
-            <DemoLabel kind="simulated" />
+            <DemoLabel kind="cloud" />
           </div>
           <p className="font-display text-2xl font-bold tabular-nums">
             {activeVehicle.sohPercent}%
           </p>
           <p className="text-xs text-[var(--cs-muted)] tabular-nums">
-            {activeVehicle.cycleCount} eq. cycles · {activeVehicle.odometerKm.toLocaleString()} km
+            {activeVehicle.cycleCount} eq. cycles ·{' '}
+            {activeVehicle.odometerKm.toLocaleString()} km
           </p>
         </TonalCard>
 
@@ -401,12 +502,12 @@ export function HomeOverviewPage() {
         <TonalCard tone="surface-2" padding="sm" className="space-y-1.5">
           <div className="flex items-center justify-between text-xs text-[var(--cs-muted)]">
             <span className="flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-[var(--cs-warning)]" />
-              Honesty Notice
+              <ShieldCheck className="w-4 h-4 text-[var(--cs-primary)]" />
+              Platform Transparency
             </span>
           </div>
           <p className="text-sm font-semibold text-[var(--cs-text)]">
-            All vehicle &amp; station feeds are simulated
+            Live OSM, OSRM, Open-Meteo &amp; Cloud Firestore
           </p>
           <button
             type="button"

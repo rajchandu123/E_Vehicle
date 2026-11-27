@@ -1,4 +1,4 @@
-import { getMatchingConnectors } from './compatibility';
+import { getMatchingConnectors, haversineDistanceKm } from './compatibility';
 import { estimateRange } from './range';
 import { computeReliability } from './reliability';
 import {
@@ -139,7 +139,7 @@ export function planTrip(
     socPercent: 100,
     avgSpeedKmh: 82,
     acOn,
-    ambientTempC: 29,
+    ambientTempC: request.ambientTempC ?? 29,
     passengers: 2,
     cargoKg: 20,
     driveMode,
@@ -198,14 +198,31 @@ export function planTrip(
   }
 
   // Otherwise select optimal charging stops along the corridor
-  const isReverse = corridor.id === 'mys-blr-return';
+  const isBlrMys = corridor.id === 'blr-mys-expressway';
+  const isMysBlr = corridor.id === 'mys-blr-return';
   const corridorStations = stations
     .filter((s) => s.status !== 'offline')
     .filter((s) => getMatchingConnectors(vehicle, s).length > 0)
     .map((s) => {
-      const kmAlongRoute = isReverse
-        ? Math.max(0, 143 - s.kmFromBengaluru)
-        : s.kmFromBengaluru;
+      let kmAlongRoute = -1;
+      if (isBlrMys) {
+        kmAlongRoute = s.kmFromBengaluru;
+      } else if (isMysBlr) {
+        kmAlongRoute = Math.max(0, 143 - s.kmFromBengaluru);
+      } else if (corridor.waypoints.length > 0) {
+        let bestDist = Infinity;
+        let bestKm = -1;
+        for (const wp of corridor.waypoints) {
+          const d = haversineDistanceKm(s.location, wp.location);
+          if (d < bestDist) {
+            bestDist = d;
+            bestKm = wp.kmFromStart;
+          }
+        }
+        if (bestDist <= 22) {
+          kmAlongRoute = bestKm;
+        }
+      }
       const reliability = computeReliability(s);
       const matching = getMatchingConnectors(vehicle, s);
       const bestKw = Math.max(

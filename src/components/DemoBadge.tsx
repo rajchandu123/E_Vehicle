@@ -1,24 +1,28 @@
 import React from 'react';
 
 interface DemoLabelProps {
-  kind?: 'demo' | 'simulated' | 'deterministic';
+  kind?: 'demo' | 'simulated' | 'deterministic' | 'live' | 'cloud';
   className?: string;
 }
 
 /**
  * Clean, understated inline indicator honoring honesty rules without pill-badge clutter.
  */
-export function DemoLabel({ kind = 'demo', className = '' }: DemoLabelProps) {
+export function DemoLabel({ kind = 'live', className = '' }: DemoLabelProps) {
   const textMap = {
     demo: 'Demo data',
     simulated: 'Simulated',
     deterministic: 'Deterministic model',
+    live: 'Live network',
+    cloud: 'Cloud Firestore',
   };
 
   const colorMap = {
     demo: 'text-[var(--cs-warning)]',
     simulated: 'text-[var(--cs-secondary)]',
     deterministic: 'text-[var(--cs-primary)]',
+    live: 'text-[var(--cs-primary)]',
+    cloud: 'text-[var(--cs-primary)]',
   };
 
   return (

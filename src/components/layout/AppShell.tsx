@@ -6,6 +6,7 @@ import {
   HeartPulse,
   Home,
   Info,
+  LogOut,
   MessageSquare,
   Monitor,
   Moon,
@@ -60,10 +61,12 @@ export function AppShell() {
     setTheme,
     layoutMode,
     setLayoutMode,
+    activeUser,
     activeVehicle,
     rangeInput,
     rangeBand,
     trigger55PercentDemo,
+    logoutAccount,
   } = useAppStore();
 
   const toggleTheme = () => {
@@ -73,6 +76,18 @@ export function AppShell() {
   const cycleLayout = (mode: LayoutMode) => {
     setLayoutMode(mode);
   };
+
+  const handleLogout = async () => {
+    await logoutAccount();
+    navigate('/auth?mode=login', { replace: true });
+  };
+
+  const userInitials = (activeUser?.name ?? 'EV')
+    .split(/\s+/)
+    .map((p) => p[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
 
   // In-Vehicle Car Mode: landscape cockpit layout with oversized touch targets & minimal text
   if (layoutMode === 'car') {
@@ -115,6 +130,15 @@ export function AppShell() {
             >
               <Monitor className="w-5 h-5" />
               <span>Exit Car Mode</span>
+            </RippleButton>
+            <RippleButton
+              variant="danger"
+              size="car"
+              onClick={handleLogout}
+              aria-label="Sign out"
+            >
+              <LogOut className="w-5 h-5" />
+              <span>Sign Out</span>
             </RippleButton>
           </div>
         </header>
@@ -192,7 +216,7 @@ export function AppShell() {
               >
                 ChargeSense
               </button>
-              <DemoLabel kind="demo" />
+              <DemoLabel kind="live" />
             </div>
 
             <nav className="flex-1 overflow-y-auto space-y-1 pr-1">
@@ -215,11 +239,6 @@ export function AppShell() {
                       <Icon className="w-[18px] h-[18px] shrink-0" />
                       <span className="truncate">{item.label}</span>
                     </span>
-                    {item.phase === 2 && (
-                      <span className="text-[10px] text-[var(--cs-muted)] opacity-75">
-                        Next
-                      </span>
-                    )}
                   </NavLink>
                 );
               })}
@@ -249,7 +268,37 @@ export function AppShell() {
               })}
             </nav>
 
-            <div className="pt-3 mt-2 border-t border-[var(--cs-outline)] space-y-2">
+            <div className="pt-3 mt-2 border-t border-[var(--cs-outline)] space-y-2.5">
+              {/* Profile Section with Sign Out */}
+              <div className="p-2.5 rounded-[16px] bg-[var(--cs-surface-2)] border border-[var(--cs-outline)] flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigate('/app/profile')}
+                  className="flex items-center gap-2.5 min-w-0 text-left cursor-pointer group"
+                >
+                  <div className="w-8 h-8 rounded-full bg-[var(--cs-primary-container)] text-[var(--cs-primary)] font-display text-xs font-bold flex items-center justify-center shrink-0">
+                    {userInitials}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-[var(--cs-text)] truncate group-hover:text-[var(--cs-primary)]">
+                      {activeUser?.name ?? 'Driver'}
+                    </p>
+                    <p className="text-[11px] text-[var(--cs-muted)] truncate">
+                      {activeUser?.email ?? 'Profile'}
+                    </p>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  title="Sign out"
+                  aria-label="Sign out"
+                  className="min-h-[34px] min-w-[34px] inline-flex items-center justify-center rounded-[10px] text-[var(--cs-muted)] hover:text-[var(--cs-error)] hover:bg-[var(--cs-error-container)] transition-colors cursor-pointer shrink-0"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+
               <div className="flex items-center justify-between gap-1 bg-[var(--cs-surface-2)] p-1 rounded-[14px]">
                 <button
                   type="button"
@@ -337,6 +386,15 @@ export function AppShell() {
               >
                 55% Demo
               </RippleButton>
+              <button
+                type="button"
+                onClick={handleLogout}
+                aria-label="Sign out"
+                title="Sign out"
+                className="md:hidden min-h-[40px] min-w-[40px] inline-flex items-center justify-center rounded-[12px] text-[var(--cs-muted)] hover:text-[var(--cs-error)] hover:bg-[var(--cs-error-container)] cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
             </div>
           </header>
 

@@ -95,7 +95,8 @@ export interface Station {
   downtimeHoursLast30d: number;
   checkIns: StationCheckIn[];
   installedAt: string;
-  isDemoData: true;
+  source?: 'osm_overpass' | 'community_verified' | 'demo';
+  isDemoData?: boolean;
 }
 
 export interface RangeInput {
@@ -214,6 +215,8 @@ export interface RouteCorridor {
   baseDriveMinutes: number;
   elevationGainM: number;
   waypoints: RouteWaypoint[];
+  geometry?: [number, number][];
+  providerSource?: 'osrm' | 'seeded';
 }
 
 export interface RoutingProvider {
@@ -241,6 +244,7 @@ export interface TripPlanRequest {
   minArrivalSocPercent?: number;
   driveMode?: DriveMode;
   acOn?: boolean;
+  ambientTempC?: number;
   preset?: RecommendationPreset;
 }
 
@@ -302,7 +306,22 @@ export interface ServiceCentre {
   evCertifiedBays: number;
   nextSlotLabel: string;
   servicesOffered: string[];
-  isDemoData: true;
+  source?: 'osm_overpass' | 'directory';
+  isDemoData?: boolean;
+}
+
+export interface ServiceBookingRecord {
+  id: string;
+  ownerId: string;
+  vehicleId: string;
+  centreId: string;
+  centreName: string;
+  serviceType: string;
+  preferredDate: string;
+  notes: string;
+  isEmergency: boolean;
+  status: 'requested' | 'confirmed' | 'dispatched' | 'completed' | 'cancelled';
+  createdAt: string;
 }
 
 export interface ClaimRecord {
@@ -333,6 +352,7 @@ export interface TripHistoryRecord {
 }
 
 export interface BatteryHealthSnapshot {
+  id?: string;
   month: string;
   sohPercent: number;
   dcFastChargeRatio: number;

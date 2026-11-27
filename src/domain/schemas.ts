@@ -11,6 +11,28 @@ export const UserProfileInputSchema = z.object({
   preferredSafetyBufferPercent: z.number().min(5).max(40),
 });
 
+export const RegisterInputSchema = UserProfileInputSchema.extend({
+  password: z
+    .string()
+    .min(8, 'Password must be at least 8 characters')
+    .max(128, 'Password is too long'),
+  confirmPassword: z.string(),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: 'Passwords do not match',
+  path: ['confirmPassword'],
+});
+
+export const LoginInputSchema = z.object({
+  email: z.string().trim().email('Enter a valid email address'),
+  password: z.string().min(1, 'Password is required').max(128),
+});
+
+export const ProfileUpdateSchema = z.object({
+  name: z.string().trim().min(2, 'Name must be at least 2 characters').max(60),
+  city: z.string().trim().min(2, 'Enter a city name').max(50),
+  preferredSafetyBufferPercent: z.number().min(5).max(40),
+});
+
 export const VehicleInputSchema = z.object({
   make: z.string().trim().min(2, 'Make is required').max(40),
   model: z.string().trim().min(1, 'Model is required').max(50),

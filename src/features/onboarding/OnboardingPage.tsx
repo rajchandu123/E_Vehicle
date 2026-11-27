@@ -1,10 +1,11 @@
-import { Check, Plus, UserCheck } from 'lucide-react';
-import React, { useState } from 'react';
+import { Check, LogOut, Pencil, Plus, Trash2, UserCheck } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DemoLabel } from '../../components/DemoBadge';
 import { RippleButton } from '../../components/RippleButton';
 import { TonalCard } from '../../components/TonalCard';
-import { UserProfileInputSchema, VehicleInputSchema } from '../../domain/schemas';
+import { SEED_VEHICLES } from '../../data/seed/vehicles';
+import { ProfileUpdateSchema, VehicleInputSchema } from '../../domain/schemas';
 import { ConnectorType } from '../../domain/types';
 import { useAppStore } from '../../store/useAppStore';
 
@@ -13,22 +14,32 @@ const ALL_CONNECTORS: ConnectorType[] = ['CCS2', 'Type 2', 'CHAdeMO', 'GB/T'];
 export function OnboardingPage() {
   const navigate = useNavigate();
   const {
-    users,
     activeUser,
-    setActiveUser,
-    createUserAndSetActive,
+    updateSignedInProfile,
+    logoutAccount,
     vehicles,
     activeVehicle,
     setActiveVehicle,
     addVehicleAndSelect,
+    removeVehicle,
   } = useAppStore();
 
-  const [showNewUser, setShowNewUser] = useState(false);
-  const [userName, setUserName] = useState('');
-  const [userEmail, setUserEmail] = useState('');
-  const [userCity, setUserCity] = useState('Bengaluru');
-  const [safetyBuffer, setSafetyBuffer] = useState(20);
-  const [userError, setUserError] = useState<string | null>(null);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [profileName, setProfileName] = useState(activeUser?.name ?? '');
+  const [profileCity, setProfileCity] = useState(activeUser?.city ?? 'Bengaluru');
+  const [safetyBuffer, setSafetyBuffer] = useState(
+    activeUser?.preferredSafetyBufferPercent ?? 20
+  );
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  useEffect(() => {
+    if (activeUser) {
+      setProfileName(activeUser.name);
+      setProfileCity(activeUser.city);
+      setSafetyBuffer(activeUser.preferredSafetyBufferPercent);
+    }
+  }, [activeUser]);
 
   const [showNewVehicle, setShowNewVehicle] = useState(false);
   const [make, setMake] = useState('');
@@ -42,28 +53,36 @@ export function OnboardingPage() {
   const [maxAcKw, setMaxAcKw] = useState(7.2);
   const [connectors, setConnectors] = useState<ConnectorType[]>(['CCS2', 'Type 2']);
   const [vehError, setVehError] = useState<string | null>(null);
+  const [savingVeh, setSavingVeh] = useState(false);
 
-  const handleCreateUser = async (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    setUserError(null);
-    const parsed = UserProfileInputSchema.safeParse({
-      name: userName,
-      email: userEmail,
-      city: userCity,
+    setProfileError(null);
+    const parsed = ProfileUpdateSchema.safeParse({
+      name: profileName,
+      city: profileCity,
       preferredSafetyBufferPercent: Number(safetyBuffer),
     });
     if (!parsed.success) {
-      setUserError(parsed.error.issues[0]?.message ?? 'Invalid profile fields');
+      setProfileError(parsed.error.issues[0]?.message ?? 'Invalid profile fields');
       return;
     }
-    await createUserAndSetActive({
-      ...parsed.data,
-      preferredPreset: 'balanced',
-      units: 'metric',
-    });
-    setShowNewUser(false);
-    setUserName('');
-    setUserEmail('');
+    setSavingProfile(true);
+    try {
+      await updateSignedInProfile(parsed.data);
+      setEditingProfile(false);
+    } catch (err) {
+      setProfileError(
+        err instanceof Error ? err.message : 'Unable to save profile.'
+      );
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await logoutAccount();
+    navigate('/auth?mode=login', { replace: true });
   };
 
   const toggleConnector = (conn: ConnectorType) => {
@@ -91,18 +110,44 @@ export function OnboardingPage() {
       setVehError(parsed.error.issues[0]?.message ?? 'Check vehicle specifications');
       return;
     }
-    await addVehicleAndSelect({
-      ...parsed.data,
-      nominalKwh: Number((parsed.data.usableKwh * 1.05).toFixed(1)),
-      odometerKm: 500,
-      sohPercent: 99.5,
-      cycleCount: 8,
-    });
-    setShowNewVehicle(false);
-    setMake('');
-    setModel('');
-    setVariant('');
+    setSavingVeh(true);
+    try {
+      await addVehicleAndSelect({
+        ...parsed.data,
+        nominalKwh: Number((parsed.data.usableKwh * 1.05).toFixed(1)),
+        odometerKm: 500,
+        sohPercent: 99.5,
+        cycleCount: 8,
+      });
+      setShowNewVehicle(false);
+      setMake('');
+      setModel('');
+      setVariant('');
+    } catch (err) {
+      setVehError(err instanceof Error ? err.message : 'Failed to save vehicle.');
+    } finally {
+      setSavingVeh(false);
+    }
   };
+
+  const handleAddTemplate = async (tplIndex: number) => {
+    const tpl = SEED_VEHICLES[tplIndex];
+    if (!tpl) return;
+    setSavingVeh(true);
+    try {
+      const { id: _ignored, ...rest } = tpl;
+      await addVehicleAndSelect(rest);
+    } finally {
+      setSavingVeh(false);
+    }
+  };
+
+  const initials = (activeUser?.name ?? 'EV')
+    .split(/\s+/)
+    .map((p) => p[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
 
   return (
     <div className="space-y-8">
@@ -111,14 +156,13 @@ export function OnboardingPage() {
           <div className="flex items-center gap-2 text-xs text-[var(--cs-muted)]">
             <span>Profile &amp; Garage Setup</span>
             <span aria-hidden="true">·</span>
-            <DemoLabel kind="demo" />
+            <DemoLabel kind="cloud" />
           </div>
           <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight mt-1">
             Driver Profile &amp; Active EV
           </h1>
           <p className="text-sm text-[var(--cs-muted)] mt-1">
-            Select a seeded demo profile or add your own vehicle specs to drive
-            range bands and connector compatibility.
+            Your account profile and electric vehicles are persisted per user in Cloud Firestore.
           </p>
         </div>
 
@@ -127,106 +171,120 @@ export function OnboardingPage() {
         </RippleButton>
       </div>
 
-      {/* Driver Profiles */}
+      {/* Signed-In Account & Profile Section */}
       <TonalCard className="space-y-5">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2.5">
-            <UserCheck className="w-5 h-5 text-[var(--cs-primary)]" />
-            <h2 className="font-display text-lg font-semibold">
-              01. Driver Profile
-            </h2>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-full bg-[var(--cs-primary-container)] text-[var(--cs-primary)] font-display font-bold text-base flex items-center justify-center shrink-0">
+              {initials}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <UserCheck className="w-4 h-4 text-[var(--cs-primary)]" />
+                <h2 className="font-display text-lg font-semibold">
+                  01. Account Profile
+                </h2>
+              </div>
+              <p className="text-xs text-[var(--cs-muted)] mt-0.5">
+                Signed in as{' '}
+                <strong className="text-[var(--cs-text)] font-medium">
+                  {activeUser?.email}
+                </strong>
+              </p>
+            </div>
           </div>
-          <RippleButton
-            variant="tonal"
-            size="sm"
-            onClick={() => setShowNewUser((v) => !v)}
-          >
-            <Plus className="w-4 h-4" />
-            <span>{showNewUser ? 'Cancel' : 'Create Profile'}</span>
-          </RippleButton>
+
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <RippleButton
+              variant="tonal"
+              size="sm"
+              onClick={() => setEditingProfile((v) => !v)}
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              <span>{editingProfile ? 'Cancel Edit' : 'Edit Profile'}</span>
+            </RippleButton>
+            <RippleButton variant="danger" size="sm" onClick={handleLogout}>
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Sign Out</span>
+            </RippleButton>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {users.map((u) => {
-            const isSelected = activeUser?.id === u.id;
-            return (
-              <button
-                key={u.id}
-                type="button"
-                onClick={() => setActiveUser(u.id)}
-                className={`text-left p-4 rounded-[16px] border transition-colors cursor-pointer ${
-                  isSelected
-                    ? 'bg-[var(--cs-primary-container)] border-[var(--cs-primary)]'
-                    : 'bg-[var(--cs-surface-2)] border-[var(--cs-outline)] hover:border-[var(--cs-outline-strong)]'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-semibold text-sm text-[var(--cs-text)]">
-                    {u.name}
-                  </span>
-                  {isSelected && (
-                    <Check className="w-4 h-4 text-[var(--cs-primary)] shrink-0" />
-                  )}
-                </div>
-                <p className="text-xs text-[var(--cs-muted)] mt-1">
-                  {u.city} · {u.preferredSafetyBufferPercent}% reserve
-                </p>
-                <p className="text-xs text-[var(--cs-muted)] truncate mt-0.5">
-                  {u.email}
-                </p>
-              </button>
-            );
-          })}
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2 border-t border-[var(--cs-outline)] text-xs tabular-nums">
+          <div className="p-3.5 rounded-[14px] bg-[var(--cs-surface-2)]">
+            <span className="text-[var(--cs-muted)] block">Driver Name</span>
+            <span className="text-sm font-semibold text-[var(--cs-text)] mt-0.5 block">
+              {activeUser?.name ?? '--'}
+            </span>
+          </div>
+          <div className="p-3.5 rounded-[14px] bg-[var(--cs-surface-2)]">
+            <span className="text-[var(--cs-muted)] block">Home City</span>
+            <span className="text-sm font-semibold text-[var(--cs-text)] mt-0.5 block">
+              {activeUser?.city ?? '--'}
+            </span>
+          </div>
+          <div className="p-3.5 rounded-[14px] bg-[var(--cs-surface-2)]">
+            <span className="text-[var(--cs-muted)] block">Safety Reserve</span>
+            <span className="text-sm font-semibold text-[var(--cs-primary)] mt-0.5 block">
+              {activeUser?.preferredSafetyBufferPercent ?? 20}% SoC
+            </span>
+          </div>
+          <div className="p-3.5 rounded-[14px] bg-[var(--cs-surface-2)]">
+            <span className="text-[var(--cs-muted)] block">Member Since</span>
+            <span className="text-sm font-semibold text-[var(--cs-text)] mt-0.5 block">
+              {activeUser?.createdAt
+                ? new Date(activeUser.createdAt).toLocaleDateString()
+                : '--'}
+            </span>
+          </div>
         </div>
 
-        {showNewUser && (
+        {editingProfile && (
           <form
-            onSubmit={handleCreateUser}
-            className="pt-4 border-t border-[var(--cs-outline)] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
+            onSubmit={handleSaveProfile}
+            className="pt-4 border-t border-[var(--cs-outline)] grid grid-cols-1 sm:grid-cols-3 gap-4"
           >
             <div>
-              <label className="block text-xs font-medium text-[var(--cs-muted)] mb-1">
+              <label
+                htmlFor="edit-profile-name"
+                className="block text-xs font-medium text-[var(--cs-muted)] mb-1"
+              >
                 Full Name
               </label>
               <input
+                id="edit-profile-name"
                 type="text"
                 required
-                value={userName}
-                onChange={(e) => setUserName(e.target.value)}
-                placeholder="e.g. Rohan Kulkarni"
+                value={profileName}
+                onChange={(e) => setProfileName(e.target.value)}
                 className="w-full min-h-[42px] px-3 rounded-[12px] bg-[var(--cs-surface-2)] border border-[var(--cs-outline)] text-sm text-[var(--cs-text)]"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-[var(--cs-muted)] mb-1">
-                Email
-              </label>
-              <input
-                type="email"
-                required
-                value={userEmail}
-                onChange={(e) => setUserEmail(e.target.value)}
-                placeholder="rohan@example.in"
-                className="w-full min-h-[42px] px-3 rounded-[12px] bg-[var(--cs-surface-2)] border border-[var(--cs-outline)] text-sm text-[var(--cs-text)]"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-[var(--cs-muted)] mb-1">
+              <label
+                htmlFor="edit-profile-city"
+                className="block text-xs font-medium text-[var(--cs-muted)] mb-1"
+              >
                 Home City
               </label>
               <input
+                id="edit-profile-city"
                 type="text"
                 required
-                value={userCity}
-                onChange={(e) => setUserCity(e.target.value)}
+                value={profileCity}
+                onChange={(e) => setProfileCity(e.target.value)}
                 className="w-full min-h-[42px] px-3 rounded-[12px] bg-[var(--cs-surface-2)] border border-[var(--cs-outline)] text-sm text-[var(--cs-text)]"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-[var(--cs-muted)] mb-1">
+              <label
+                htmlFor="edit-profile-buffer"
+                className="block text-xs font-medium text-[var(--cs-muted)] mb-1"
+              >
                 Safety Buffer ({safetyBuffer}%)
               </label>
               <input
+                id="edit-profile-buffer"
                 type="number"
                 min={5}
                 max={40}
@@ -236,14 +294,18 @@ export function OnboardingPage() {
               />
             </div>
 
-            {userError && (
-              <p className="sm:col-span-2 lg:col-span-4 text-xs text-[var(--cs-error)]">
-                {userError}
+            {profileError && (
+              <p className="sm:col-span-3 text-xs text-[var(--cs-error)]">
+                {profileError}
               </p>
             )}
-            <div className="sm:col-span-2 lg:col-span-4 flex justify-end">
-              <RippleButton type="submit" variant="primary">
-                Save Profile
+            <div className="sm:col-span-3 flex justify-end">
+              <RippleButton
+                type="submit"
+                variant="primary"
+                disabled={savingProfile}
+              >
+                {savingProfile ? 'Saving...' : 'Save Changes'}
               </RippleButton>
             </div>
           </form>
@@ -252,9 +314,9 @@ export function OnboardingPage() {
 
       {/* Vehicles */}
       <TonalCard className="space-y-5">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <h2 className="font-display text-lg font-semibold">
-            02. Select or Add Electric Vehicle
+            02. Your Cloud Garage ({vehicles.length})
           </h2>
           <RippleButton
             variant="tonal"
@@ -266,64 +328,121 @@ export function OnboardingPage() {
           </RippleButton>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {vehicles.map((veh) => {
-            const isSelected = activeVehicle?.id === veh.id;
-            return (
-              <button
-                key={veh.id}
-                type="button"
-                onClick={() => setActiveVehicle(veh.id)}
-                className={`text-left p-4 rounded-[18px] border transition-colors cursor-pointer space-y-2 ${
-                  isSelected
-                    ? 'bg-[var(--cs-primary-container)] border-[var(--cs-primary)]'
-                    : 'bg-[var(--cs-surface-2)] border-[var(--cs-outline)] hover:border-[var(--cs-outline-strong)]'
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="font-display text-base font-semibold text-[var(--cs-text)]">
-                      {veh.make} {veh.model}
-                    </p>
-                    <p className="text-xs text-[var(--cs-muted)]">
-                      {veh.variant}
-                    </p>
-                  </div>
-                  {isSelected && (
-                    <Check className="w-4 h-4 text-[var(--cs-primary)] shrink-0 mt-1" />
-                  )}
-                </div>
+        {vehicles.length === 0 ? (
+          <div className="p-5 rounded-[18px] bg-[var(--cs-surface-2)] border border-[var(--cs-outline)] space-y-4">
+            <p className="text-sm text-[var(--cs-text)] font-medium">
+              No vehicles registered in your garage yet. Add a custom EV or start from an Indian EV spec template:
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {SEED_VEHICLES.map((tpl, idx) => (
+                <RippleButton
+                  key={tpl.id}
+                  variant="tonal"
+                  size="sm"
+                  disabled={savingVeh}
+                  onClick={() => void handleAddTemplate(idx)}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>
+                    {tpl.make} {tpl.model} ({tpl.usableKwh} kWh)
+                  </span>
+                </RippleButton>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {vehicles.map((veh) => {
+                const isSelected = activeVehicle?.id === veh.id;
+                return (
+                  <div
+                    key={veh.id}
+                    className={`p-4 rounded-[18px] border transition-colors space-y-2 ${
+                      isSelected
+                        ? 'bg-[var(--cs-primary-container)] border-[var(--cs-primary)]'
+                        : 'bg-[var(--cs-surface-2)] border-[var(--cs-outline)]'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setActiveVehicle(veh.id)}
+                        className="text-left flex-1 cursor-pointer"
+                      >
+                        <p className="font-display text-base font-semibold text-[var(--cs-text)]">
+                          {veh.make} {veh.model}
+                        </p>
+                        <p className="text-xs text-[var(--cs-muted)]">
+                          {veh.variant} · {veh.registrationNumber}
+                        </p>
+                      </button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {isSelected && (
+                          <Check className="w-4 h-4 text-[var(--cs-primary)]" />
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => void removeVehicle(veh.id)}
+                          aria-label={`Delete ${veh.make} ${veh.model}`}
+                          className="min-h-[30px] min-w-[30px] inline-flex items-center justify-center rounded-[8px] text-[var(--cs-muted)] hover:text-[var(--cs-error)] cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
 
-                <div className="pt-2 border-t border-[var(--cs-outline)] grid grid-cols-2 gap-2 text-xs tabular-nums">
-                  <div>
-                    <span className="text-[var(--cs-muted)] block">Usable Pack</span>
-                    <span className="font-medium text-[var(--cs-text)]">
-                      {veh.usableKwh} kWh
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveVehicle(veh.id)}
+                      className="w-full text-left pt-2 border-t border-[var(--cs-outline)] grid grid-cols-2 gap-2 text-xs tabular-nums cursor-pointer"
+                    >
+                      <div>
+                        <span className="text-[var(--cs-muted)] block">Usable Pack</span>
+                        <span className="font-medium text-[var(--cs-text)]">
+                          {veh.usableKwh} kWh
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[var(--cs-muted)] block">Efficiency</span>
+                        <span className="font-medium text-[var(--cs-text)]">
+                          {veh.efficiencyWhPerKm} Wh/km
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[var(--cs-muted)] block">Connectors</span>
+                        <span className="font-medium text-[var(--cs-text)]">
+                          {veh.connectors.join(', ')}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[var(--cs-muted)] block">Max DC / AC</span>
+                        <span className="font-medium text-[var(--cs-text)]">
+                          {veh.maxDcChargeKw} / {veh.maxAcChargeKw} kW
+                        </span>
+                      </div>
+                    </button>
                   </div>
-                  <div>
-                    <span className="text-[var(--cs-muted)] block">Efficiency</span>
-                    <span className="font-medium text-[var(--cs-text)]">
-                      {veh.efficiencyWhPerKm} Wh/km
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-[var(--cs-muted)] block">Connectors</span>
-                    <span className="font-medium text-[var(--cs-text)]">
-                      {veh.connectors.join(', ')}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-[var(--cs-muted)] block">Max DC / AC</span>
-                    <span className="font-medium text-[var(--cs-text)]">
-                      {veh.maxDcChargeKw} / {veh.maxAcChargeKw} kW
-                    </span>
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
+                );
+              })}
+            </div>
+
+            <div className="pt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--cs-muted)]">
+              <span>Quick-add Indian EV preset:</span>
+              {SEED_VEHICLES.map((tpl, idx) => (
+                <button
+                  key={tpl.id}
+                  type="button"
+                  disabled={savingVeh}
+                  onClick={() => void handleAddTemplate(idx)}
+                  className="px-2.5 py-1.5 rounded-[10px] bg-[var(--cs-surface-2)] border border-[var(--cs-outline)] hover:border-[var(--cs-primary)] text-[var(--cs-text)] cursor-pointer"
+                >
+                  + {tpl.make} {tpl.model}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {showNewVehicle && (
           <form
@@ -477,8 +596,8 @@ export function OnboardingPage() {
             )}
 
             <div className="sm:col-span-2 lg:col-span-3 flex justify-end">
-              <RippleButton type="submit" variant="primary">
-                Save &amp; Activate Vehicle
+              <RippleButton type="submit" variant="primary" disabled={savingVeh}>
+                {savingVeh ? 'Saving...' : 'Save & Activate Vehicle'}
               </RippleButton>
             </div>
           </form>

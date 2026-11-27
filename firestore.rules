@@ -1,0 +1,396 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Core Helpers
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'rajchandu1gs@gmail.com'
+      );
+    }
+
+    function isNonEmptyString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    // Validation Helpers
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll([
+          'uid', 'name', 'email', 'city', 'preferredSafetyBufferPercent',
+          'preferredPreset', 'units', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid', 'name', 'email', 'city', 'preferredSafetyBufferPercent',
+          'preferredPreset', 'units', 'createdAt', 'updatedAt'
+        ])
+        && data.uid == userId
+        && isNonEmptyString(data.name, 2, 60)
+        && isNonEmptyString(data.email, 5, 120)
+        && isNonEmptyString(data.city, 2, 50)
+        && data.preferredSafetyBufferPercent is number
+        && data.preferredSafetyBufferPercent >= 5
+        && data.preferredSafetyBufferPercent <= 40
+        && data.preferredPreset in ['balanced', 'fastest', 'cheapest', 'most_reliable', 'custom']
+        && data.units in ['metric', 'imperial']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidVehicle(data) {
+      return data.keys().hasAll([
+          'ownerId', 'make', 'model', 'variant', 'year', 'registrationNumber',
+          'usableKwh', 'nominalKwh', 'efficiencyWhPerKm', 'connectors',
+          'maxDcChargeKw', 'maxAcChargeKw', 'odometerKm', 'sohPercent',
+          'cycleCount', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'make', 'model', 'variant', 'year', 'registrationNumber',
+          'usableKwh', 'nominalKwh', 'efficiencyWhPerKm', 'connectors',
+          'maxDcChargeKw', 'maxAcChargeKw', 'odometerKm', 'sohPercent',
+          'cycleCount', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.ownerId)
+        && data.ownerId == request.auth.uid
+        && isNonEmptyString(data.make, 1, 40)
+        && isNonEmptyString(data.model, 1, 50)
+        && isNonEmptyString(data.variant, 1, 60)
+        && data.year is int && data.year >= 2015 && data.year <= 2028
+        && isNonEmptyString(data.registrationNumber, 3, 24)
+        && data.usableKwh is number && data.usableKwh >= 10 && data.usableKwh <= 200
+        && data.nominalKwh is number && data.nominalKwh >= 10 && data.nominalKwh <= 220
+        && data.efficiencyWhPerKm is number && data.efficiencyWhPerKm >= 80 && data.efficiencyWhPerKm <= 400
+        && data.connectors is list && data.connectors.size() >= 1 && data.connectors.size() <= 4
+        && data.connectors[0] in ['CCS2', 'Type 2', 'CHAdeMO', 'GB/T']
+        && data.maxDcChargeKw is number && data.maxDcChargeKw >= 3 && data.maxDcChargeKw <= 400
+        && data.maxAcChargeKw is number && data.maxAcChargeKw >= 3 && data.maxAcChargeKw <= 44
+        && data.odometerKm is number && data.odometerKm >= 0 && data.odometerKm <= 2000000
+        && data.sohPercent is number && data.sohPercent >= 40 && data.sohPercent <= 100
+        && data.cycleCount is int && data.cycleCount >= 0 && data.cycleCount <= 10000
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidStation(data) {
+      return data.keys().hasAll([
+          'name', 'operator', 'corridorSegment', 'kmFromBengaluru', 'address',
+          'lat', 'lng', 'status', 'connectors', 'pricePerKwhInr', 'amenities',
+          'open24x7', 'historicalSuccessCount', 'historicalFailureCount',
+          'downtimeHoursLast30d', 'source', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'name', 'operator', 'corridorSegment', 'kmFromBengaluru', 'address',
+          'lat', 'lng', 'status', 'connectors', 'pricePerKwhInr', 'amenities',
+          'open24x7', 'historicalSuccessCount', 'historicalFailureCount',
+          'downtimeHoursLast30d', 'source', 'installedAt', 'updatedAt'
+        ])
+        && isNonEmptyString(data.name, 2, 140)
+        && isNonEmptyString(data.operator, 1, 80)
+        && isNonEmptyString(data.corridorSegment, 2, 40)
+        && data.kmFromBengaluru is number && data.kmFromBengaluru >= 0 && data.kmFromBengaluru <= 500
+        && isNonEmptyString(data.address, 2, 240)
+        && data.lat is number && data.lng is number
+        && data.status in ['online', 'degraded', 'offline']
+        && data.connectors is list && data.connectors.size() >= 1 && data.connectors.size() <= 6
+        && data.pricePerKwhInr is number && data.pricePerKwhInr >= 0 && data.pricePerKwhInr <= 100
+        && data.amenities is list && data.amenities.size() <= 10
+        && data.open24x7 is bool
+        && data.historicalSuccessCount is int && data.historicalSuccessCount >= 0
+        && data.historicalFailureCount is int && data.historicalFailureCount >= 0
+        && data.downtimeHoursLast30d is number && data.downtimeHoursLast30d >= 0
+        && data.source in ['osm_overpass', 'community_verified']
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCheckIn(data, stationId) {
+      return data.keys().hasAll([
+          'stationId', 'userId', 'userName', 'outcome', 'issueType', 'comment', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'stationId', 'userId', 'userName', 'outcome', 'issueType', 'comment', 'createdAt'
+        ])
+        && data.stationId == stationId
+        && data.userId == request.auth.uid
+        && isNonEmptyString(data.userName, 1, 60)
+        && data.outcome in ['worked', 'not_working']
+        && data.issueType in ['none', 'charger_offline', 'connector_damaged', 'payment_failed', 'slow_speed', 'occupied_ice']
+        && data.comment is string && data.comment.size() <= 240
+        && data.createdAt is timestamp;
+    }
+
+    function isValidTrip(data) {
+      return data.keys().hasAll([
+          'ownerId', 'vehicleId', 'date', 'origin', 'destination',
+          'distanceKm', 'energyUsedKwh', 'costInr', 'avgEfficiencyWhKm', 'ecoScore', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'vehicleId', 'date', 'origin', 'destination',
+          'distanceKm', 'energyUsedKwh', 'costInr', 'avgEfficiencyWhKm', 'ecoScore', 'createdAt'
+        ])
+        && data.ownerId == request.auth.uid
+        && isValidId(data.vehicleId)
+        && isNonEmptyString(data.date, 8, 24)
+        && isNonEmptyString(data.origin, 2, 100)
+        && isNonEmptyString(data.destination, 2, 100)
+        && data.distanceKm is number && data.distanceKm >= 0 && data.distanceKm <= 2000
+        && data.energyUsedKwh is number && data.energyUsedKwh >= 0 && data.energyUsedKwh <= 300
+        && data.costInr is number && data.costInr >= 0 && data.costInr <= 50000
+        && data.avgEfficiencyWhKm is number && data.avgEfficiencyWhKm >= 50 && data.avgEfficiencyWhKm <= 500
+        && data.ecoScore is number && data.ecoScore >= 0 && data.ecoScore <= 100
+        && data.createdAt is timestamp;
+    }
+
+    function isValidServiceBooking(data) {
+      return data.keys().hasAll([
+          'ownerId', 'vehicleId', 'centreId', 'centreName', 'serviceType',
+          'preferredDate', 'notes', 'isEmergency', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'vehicleId', 'centreId', 'centreName', 'serviceType',
+          'preferredDate', 'notes', 'isEmergency', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == request.auth.uid
+        && isValidId(data.vehicleId)
+        && isValidId(data.centreId)
+        && isNonEmptyString(data.centreName, 2, 140)
+        && isNonEmptyString(data.serviceType, 2, 100)
+        && isNonEmptyString(data.preferredDate, 4, 32)
+        && data.notes is string && data.notes.size() <= 400
+        && data.isEmergency is bool
+        && data.status in ['requested', 'confirmed', 'dispatched', 'completed', 'cancelled']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidClaim(data) {
+      return data.keys().hasAll([
+          'ownerId', 'vehicleId', 'policyNumber', 'insurerName', 'incidentType',
+          'incidentDate', 'description', 'estimatedAmountInr', 'documents',
+          'status', 'timeline', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'vehicleId', 'policyNumber', 'insurerName', 'incidentType',
+          'incidentDate', 'description', 'estimatedAmountInr', 'documents',
+          'status', 'timeline', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == request.auth.uid
+        && isValidId(data.vehicleId)
+        && isNonEmptyString(data.policyNumber, 4, 40)
+        && isNonEmptyString(data.insurerName, 2, 80)
+        && data.incidentType in ['battery_thermal', 'charger_surge', 'collision', 'roadside_tow', 'glass_body']
+        && isNonEmptyString(data.incidentDate, 8, 24)
+        && isNonEmptyString(data.description, 10, 600)
+        && data.estimatedAmountInr is number && data.estimatedAmountInr >= 500 && data.estimatedAmountInr <= 5000000
+        && data.documents is list && data.documents.size() <= 10
+        && data.status in ['submitted', 'survey_assigned', 'approved', 'settled']
+        && data.timeline is list && data.timeline.size() >= 1 && data.timeline.size() <= 10
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPassportEvent(data) {
+      return data.keys().hasAll([
+          'ownerId', 'vehicleId', 'type', 'timestamp', 'odometerKm',
+          'title', 'summary', 'metadata', 'prevHash', 'hash', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'vehicleId', 'type', 'timestamp', 'odometerKm',
+          'title', 'summary', 'metadata', 'prevHash', 'hash', 'createdAt'
+        ])
+        && data.ownerId == request.auth.uid
+        && isValidId(data.vehicleId)
+        && data.type in ['ownership_registered', 'charging_session', 'service_record', 'battery_snapshot', 'insurance_claim']
+        && isNonEmptyString(data.timestamp, 10, 40)
+        && data.odometerKm is number && data.odometerKm >= 0 && data.odometerKm <= 2000000
+        && isNonEmptyString(data.title, 2, 120)
+        && isNonEmptyString(data.summary, 2, 400)
+        && data.metadata is map
+        && data.prevHash is string && data.prevHash.size() == 64
+        && data.hash is string && data.hash.size() == 64
+        && data.createdAt is timestamp;
+    }
+
+    function isValidBatterySnapshot(data) {
+      return data.keys().hasAll([
+          'ownerId', 'vehicleId', 'month', 'sohPercent', 'dcFastChargeRatio',
+          'avgTempC', 'cycles', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'vehicleId', 'month', 'sohPercent', 'dcFastChargeRatio',
+          'avgTempC', 'cycles', 'createdAt'
+        ])
+        && data.ownerId == request.auth.uid
+        && isValidId(data.vehicleId)
+        && isNonEmptyString(data.month, 3, 20)
+        && data.sohPercent is number && data.sohPercent >= 40 && data.sohPercent <= 100
+        && data.dcFastChargeRatio is number && data.dcFastChargeRatio >= 0 && data.dcFastChargeRatio <= 100
+        && data.avgTempC is number && data.avgTempC >= -10 && data.avgTempC <= 65
+        && data.cycles is int && data.cycles >= 0 && data.cycles <= 10000
+        && data.createdAt is timestamp;
+    }
+
+    // Connection test doc
+    match /test/connection {
+      allow get: if isSignedIn();
+    }
+
+    // Admins registry
+    match /admins/{adminId} {
+      allow get: if isOwner(adminId) || isAdmin();
+    }
+
+    // User Profiles (PII restricted to owner/admin)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow create: if isValidId(userId) && isVerifiedUser() && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId) && isVerifiedUser() && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'name', 'city', 'preferredSafetyBufferPercent', 'preferredPreset', 'units', 'updatedAt'
+        ]);
+    }
+
+    // Vehicles
+    match /vehicles/{vehicleId} {
+      allow get: if isValidId(vehicleId) && isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isValidId(vehicleId) && isVerifiedUser()
+        && isValidVehicle(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(vehicleId) && isVerifiedUser()
+        && existing().ownerId == request.auth.uid
+        && isValidVehicle(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'odometerKm', 'sohPercent', 'cycleCount', 'efficiencyWhPerKm', 'usableKwh', 'updatedAt'
+        ]);
+      allow delete: if isValidId(vehicleId) && isVerifiedUser() && existing().ownerId == request.auth.uid;
+    }
+
+    // Stations & Community Check-ins
+    match /stations/{stationId} {
+      allow get: if isValidId(stationId) && isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isValidId(stationId) && isVerifiedUser()
+        && isValidStation(incoming())
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(stationId) && isAdmin()
+        && isValidStation(incoming())
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'pricePerKwhInr', 'downtimeHoursLast30d', 'updatedAt']);
+
+      match /checkIns/{checkInId} {
+        allow get: if isValidId(stationId) && isValidId(checkInId) && isSignedIn();
+        allow list: if isValidId(stationId) && isSignedIn();
+        allow create: if isValidId(stationId) && isValidId(checkInId) && isVerifiedUser()
+          && exists(/databases/$(database)/documents/stations/$(stationId))
+          && isValidCheckIn(incoming(), stationId)
+          && incoming().createdAt == request.time;
+      }
+    }
+
+    // Trips
+    match /trips/{tripId} {
+      allow get: if isValidId(tripId) && isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isValidId(tripId) && isVerifiedUser()
+        && isValidTrip(incoming())
+        && incoming().createdAt == request.time;
+      allow delete: if isValidId(tripId) && isVerifiedUser() && existing().ownerId == request.auth.uid;
+    }
+
+    // Service Bookings & Roadside Assistance
+    match /serviceBookings/{bookingId} {
+      allow get: if isValidId(bookingId) && isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isValidId(bookingId) && isVerifiedUser()
+        && isValidServiceBooking(incoming())
+        && incoming().status == 'requested'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(bookingId) && isVerifiedUser()
+        && (existing().ownerId == request.auth.uid || isAdmin())
+        && existing().status != 'completed'
+        && existing().status != 'cancelled'
+        && isValidServiceBooking(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'preferredDate', 'notes', 'updatedAt']);
+    }
+
+    // Insurance Claims
+    match /claims/{claimId} {
+      allow get: if isValidId(claimId) && isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isValidId(claimId) && isVerifiedUser()
+        && isValidClaim(incoming())
+        && incoming().status == 'submitted'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(claimId) && isAdmin()
+        && existing().status != 'settled'
+        && isValidClaim(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'timeline', 'updatedAt']);
+    }
+
+    // EV Digital Passport (Append-only hash chain)
+    match /passportEvents/{eventId} {
+      allow get: if isValidId(eventId) && isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isValidId(eventId) && isVerifiedUser()
+        && isValidPassportEvent(incoming())
+        && incoming().createdAt == request.time;
+    }
+
+    // Battery Health Snapshots
+    match /batterySnapshots/{snapshotId} {
+      allow get: if isValidId(snapshotId) && isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isValidId(snapshotId) && isVerifiedUser()
+        && isValidBatterySnapshot(incoming())
+        && incoming().createdAt == request.time;
+    }
+  }
+}

@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   BatteryCharging,
   Filter,
+  RefreshCw,
   Search,
   ShieldCheck,
   Sliders,
@@ -13,7 +14,6 @@ import { DemoLabel } from '../../components/DemoBadge';
 import { RippleButton } from '../../components/RippleButton';
 import { CardSkeleton } from '../../components/Skeleton';
 import { TonalCard } from '../../components/TonalCard';
-import { repositories } from '../../data/mockRepositories';
 import { filterCompatibleStations } from '../../domain/compatibility';
 import { PRESET_WEIGHTS, recommendStations } from '../../domain/recommendation';
 import { computeReliability } from '../../domain/reliability';
@@ -21,7 +21,6 @@ import {
   IssueType,
   RecommendationPreset,
   RecommendationWeights,
-  Station,
 } from '../../domain/types';
 import { BENGALURU_ORIGIN } from '../../services/orchestrators';
 import { useAppStore } from '../../store/useAppStore';
@@ -39,23 +38,24 @@ const PRESETS: { id: RecommendationPreset; label: string }[] = [
 export function ChargingPage() {
   const navigate = useNavigate();
   const {
+    loading,
     activeUser,
     activeVehicle,
+    stations,
+    stationsFetchedAt,
+    stationsError,
+    refreshLiveStations,
+    submitStationCheckIn,
     rangeBand,
     rangeInput,
     preset,
     setPreset,
     trigger55PercentDemo,
-    addToast,
   } = useAppStore();
 
-  // Direct MockStationRepo integration for Charging Map data visualization
-  const [stations, setStations] = useState<Station[]>([]);
-  const [loadingStations, setLoadingStations] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
+  const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [maxPriceInr, setMaxPriceInr] = useState<number>(25);
+  const [maxPriceInr, setMaxPriceInr] = useState<number>(30);
   const [minPowerKw, setMinPowerKw] = useState<number>(0);
   const [useMinRangeForSafety, setUseMinRangeForSafety] = useState(false);
   const [showExcludedOnMap, setShowExcludedOnMap] = useState(false);
@@ -65,28 +65,20 @@ export function ChargingPage() {
     PRESET_WEIGHTS.balanced
   );
 
-  // Fetch stations from MockStationRepo on mount
   useEffect(() => {
-    let active = true;
-    setLoadingStations(true);
-    repositories.stations
-      .listStations()
-      .then((list) => {
-        if (!active) return;
-        setStations(list);
-        setLoadingStations(false);
-      })
-      .catch((err) => {
-        if (!active) return;
-        setLoadError(
-          err instanceof Error ? err.message : 'Failed to load station repo'
-        );
-        setLoadingStations(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
+    if (stations.length === 0 && !stationsError) {
+      void refreshLiveStations();
+    }
+  }, [stations.length, stationsError, refreshLiveStations]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await refreshLiveStations(true);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // Text search pre-filter (keeps compatibility & ranking deterministic)
   const searchFilteredStations = useMemo(() => {
@@ -111,9 +103,9 @@ export function ChargingPage() {
       rangeBand,
       preset,
       customWeights: preset === 'custom' ? customWeights : undefined,
-      maxPriceInr: maxPriceInr < 25 ? maxPriceInr : undefined,
+      maxPriceInr: maxPriceInr < 30 ? maxPriceInr : undefined,
       minPowerKw: minPowerKw > 0 ? minPowerKw : undefined,
-      maxResults: 25,
+      maxResults: 40,
       useMinRangeForSafety,
     });
   }, [
@@ -127,7 +119,6 @@ export function ChargingPage() {
     useMinRangeForSafety,
   ]);
 
-  // Also extract excluded list for map inspection & transparency
   const compatibilityBreakdown = useMemo(() => {
     if (!activeVehicle || !rangeBand) return null;
     const reachableKm = useMinRangeForSafety
@@ -136,7 +127,7 @@ export function ChargingPage() {
     return filterCompatibleStations(activeVehicle, searchFilteredStations, {
       origin: BENGALURU_ORIGIN,
       reachableKm,
-      maxPriceInr: maxPriceInr < 25 ? maxPriceInr : undefined,
+      maxPriceInr: maxPriceInr < 30 ? maxPriceInr : undefined,
       minPowerKw: minPowerKw > 0 ? minPowerKw : undefined,
     });
   }, [
@@ -148,7 +139,6 @@ export function ChargingPage() {
     minPowerKw,
   ]);
 
-  // Default select top recommendation when list updates and nothing is selected
   useEffect(() => {
     if (!report) return;
     if (
@@ -159,6 +149,8 @@ export function ChargingPage() {
     }
     if (report.recommendations.length > 0) {
       setSelectedStationId(report.recommendations[0].station.id);
+    } else if (stations.length > 0) {
+      setSelectedStationId(stations[0].id);
     }
   }, [report, selectedStationId, stations]);
 
@@ -193,28 +185,16 @@ export function ChargingPage() {
     issueType: IssueType;
     comment: string;
   }) => {
-    const updated = await repositories.stations.addCheckIn(payload.stationId, {
-      userId: activeUser?.id ?? 'usr-ananya',
-      userName: activeUser?.name ?? 'Demo Driver',
+    await submitStationCheckIn(payload.stationId, {
+      userId: activeUser?.id ?? '',
+      userName: activeUser?.name ?? 'Driver',
       outcome: payload.outcome,
       issueType: payload.issueType,
       comment: payload.comment,
     });
-
-    // Refresh local repo state and sync global store stations
-    const freshList = await repositories.stations.listStations();
-    setStations(freshList);
-    useAppStore.setState({ stations: freshList });
-
-    const newRel = computeReliability(updated);
-    addToast({
-      title: `Check-in saved for ${updated.name}`,
-      detail: `Reliability score updated to ${newRel.score}/100 (${newRel.confidence} confidence)`,
-      tone: payload.outcome === 'worked' ? 'success' : 'warning',
-    });
   };
 
-  if (loadingStations || !activeVehicle || !rangeBand) {
+  if (loading) {
     return (
       <div className="space-y-6">
         <CardSkeleton />
@@ -230,15 +210,17 @@ export function ChargingPage() {
     );
   }
 
-  if (loadError) {
+  if (!activeVehicle || !rangeBand) {
     return (
       <TonalCard className="max-w-lg space-y-3">
-        <h1 className="font-display text-xl font-bold text-[var(--cs-error)]">
-          Unable to load station repository
+        <h1 className="font-display text-xl font-bold">
+          Add a Vehicle to Filter Live Chargers
         </h1>
-        <p className="text-sm text-[var(--cs-muted)]">{loadError}</p>
-        <RippleButton variant="tonal" onClick={() => navigate('/app')}>
-          Back to Home
+        <p className="text-sm text-[var(--cs-muted)]">
+          Register an EV in your Cloud Firestore garage so ChargeSense can match connector types and reachable range.
+        </p>
+        <RippleButton variant="primary" onClick={() => navigate('/onboarding')}>
+          Go to Profile &amp; EV Setup
         </RippleButton>
       </TonalCard>
     );
@@ -250,21 +232,29 @@ export function ChargingPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header & 55% Scenario Shortcut */}
+      {/* Header & Live Overpass Sync */}
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-xs text-[var(--cs-muted)]">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--cs-muted)]">
             <span>Bengaluru – Mysuru Corridor</span>
             <span aria-hidden="true">·</span>
-            <span>MockStationRepo ({stations.length} stations)</span>
+            <span>OpenStreetMap Overpass ({stations.length} stations)</span>
             <span aria-hidden="true">·</span>
-            <DemoLabel kind="demo" />
+            <DemoLabel kind="live" />
+            {stationsFetchedAt && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="tabular-nums">
+                  Synced {new Date(stationsFetchedAt).toLocaleTimeString()}
+                </span>
+              </>
+            )}
           </div>
           <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight mt-1">
-            Charging Map &amp; Reliability Explorer
+            Live Charging Map &amp; Reliability Explorer
           </h1>
           <p className="text-sm text-[var(--cs-muted)] mt-1 tabular-nums">
-            Showing stations compatible with{' '}
+            Filtering real stations compatible with{' '}
             <strong className="text-[var(--cs-text)] font-medium">
               {activeVehicle.make} {activeVehicle.model}
             </strong>{' '}
@@ -278,27 +268,44 @@ export function ChargingPage() {
 
         <div className="flex flex-wrap items-center gap-2.5 shrink-0">
           <RippleButton
+            variant="tonal"
+            size="sm"
+            disabled={refreshing}
+            onClick={() => void handleRefresh()}
+          >
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            <span>{refreshing ? 'Syncing...' : 'Refresh Live OSM'}</span>
+          </RippleButton>
+          <RippleButton
             variant="primary"
             size="sm"
             onClick={trigger55PercentDemo}
           >
             <BatteryCharging className="w-4 h-4" />
-            <span>55% Battery Shortcut</span>
-          </RippleButton>
-          <RippleButton
-            variant="tonal"
-            size="sm"
-            onClick={() => navigate('/onboarding')}
-          >
-            Change EV
+            <span>55% Scenario</span>
           </RippleButton>
         </div>
       </div>
 
+      {stationsError && (
+        <div
+          role="alert"
+          className="p-4 rounded-[16px] bg-[var(--cs-error-container)] text-xs text-[var(--cs-error)] flex flex-wrap items-center justify-between gap-3"
+        >
+          <span>Live OpenStreetMap sync warning: {stationsError}</span>
+          <RippleButton
+            variant="secondary"
+            size="sm"
+            onClick={() => void handleRefresh()}
+          >
+            Retry Sync
+          </RippleButton>
+        </div>
+      )}
+
       {/* Filter & Preset Toolbar */}
       <TonalCard padding="sm" className="space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          {/* Segmented Preset Control */}
           <div
             role="group"
             aria-label="Recommendation ranking preset"
@@ -320,7 +327,6 @@ export function ChargingPage() {
             ))}
           </div>
 
-          {/* Search & Quick Caps */}
           <div className="flex flex-wrap items-center gap-2.5">
             <div className="relative flex-1 sm:flex-initial min-w-[210px]">
               <Search className="w-4 h-4 text-[var(--cs-muted)] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -340,10 +346,10 @@ export function ChargingPage() {
               onChange={(e) => setMaxPriceInr(Number(e.target.value))}
               className="min-h-[38px] px-3 rounded-[12px] bg-[var(--cs-surface-2)] border border-[var(--cs-outline)] text-xs text-[var(--cs-text)] tabular-nums"
             >
-              <option value={25}>Any price</option>
+              <option value={30}>Any tariff</option>
               <option value={15}>Under ₹15/kWh</option>
               <option value={18}>Under ₹18/kWh</option>
-              <option value={20}>Under ₹20/kWh</option>
+              <option value={22}>Under ₹22/kWh</option>
             </select>
 
             <select
@@ -377,7 +383,6 @@ export function ChargingPage() {
           </div>
         </div>
 
-        {/* Custom Weight Sliders */}
         {preset === 'custom' && (
           <div className="pt-3 border-t border-[var(--cs-outline)] grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {(
@@ -416,7 +421,6 @@ export function ChargingPage() {
           </div>
         )}
 
-        {/* Deterministic Filter Audit Summary */}
         {report && (
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--cs-muted)] pt-2 border-t border-[var(--cs-outline)] tabular-nums">
             <span>
@@ -452,7 +456,6 @@ export function ChargingPage() {
             onSelectStation={setSelectedStationId}
           />
 
-          {/* Fallback Option Banner */}
           {report?.fallback && (
             <TonalCard tone="surface-2" padding="sm">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -467,7 +470,7 @@ export function ChargingPage() {
                   <p className="text-xs text-[var(--cs-muted)] tabular-nums">
                     {report.fallback.reliability.score}/100 reliability ·{' '}
                     {report.fallback.availableCompatibleBays}/
-                    {report.fallback.totalCompatibleBays} bays open ·{' '}
+                    {report.fallback.totalCompatibleBays} bays ·{' '}
                     {report.fallback.distanceKm} km away
                   </p>
                 </div>
@@ -483,7 +486,7 @@ export function ChargingPage() {
           )}
         </div>
 
-        {/* Right Column: Selected Station Details + Check-In + Ranked List */}
+        {/* Right Column: Selected Station Details + Firestore Check-In + Ranked List */}
         <div className="lg:col-span-5 space-y-5">
           {selectedStation && selectedReliability ? (
             <TonalCard className="space-y-4">
@@ -529,7 +532,6 @@ export function ChargingPage() {
                 </p>
               ) : null}
 
-              {/* Connectors & Tariff */}
               <div className="grid grid-cols-2 gap-2.5 text-xs tabular-nums">
                 {selectedStation.connectors.map((c, idx) => {
                   const compatible = activeVehicle.connectors.includes(c.type);
@@ -551,7 +553,7 @@ export function ChargingPage() {
                         </span>
                       </div>
                       <p className="text-[11px] text-[var(--cs-muted)] mt-1">
-                        {c.availableBays}/{c.totalBays} bays free ·{' '}
+                        {c.availableBays}/{c.totalBays} bays ·{' '}
                         {compatible ? 'Fits EV' : 'Incompatible'}
                       </p>
                     </div>
@@ -559,14 +561,14 @@ export function ChargingPage() {
                 })}
               </div>
 
-              {/* Bayesian Reliability Reasons */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-semibold text-[var(--cs-text)]">
                     Reliability Breakdown
                   </span>
                   <span className="text-[var(--cs-muted)] capitalize tabular-nums">
-                    {selectedReliability.confidence} confidence ({selectedReliability.effectiveSamples} eff. obs)
+                    {selectedReliability.confidence} confidence (
+                    {selectedReliability.effectiveSamples} eff. obs)
                   </span>
                 </div>
                 <ul className="space-y-1 text-xs text-[var(--cs-muted)] list-disc pl-4">
@@ -576,14 +578,13 @@ export function ChargingPage() {
                 </ul>
               </div>
 
-              {/* Recent Check-Ins */}
               {selectedStation.checkIns.length > 0 && (
                 <div className="space-y-2 pt-2 border-t border-[var(--cs-outline)]">
                   <span className="block text-xs font-semibold text-[var(--cs-text)]">
-                    Recent Driver Check-Ins ({selectedStation.checkIns.length})
+                    Community Check-Ins ({selectedStation.checkIns.length})
                   </span>
                   <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
-                    {selectedStation.checkIns.slice(0, 4).map((chk) => (
+                    {selectedStation.checkIns.slice(0, 6).map((chk) => (
                       <div
                         key={chk.id}
                         className="text-xs p-2.5 rounded-[12px] bg-[var(--cs-surface-2)]"
@@ -599,7 +600,9 @@ export function ChargingPage() {
                                 : 'text-[var(--cs-error)] font-medium'
                             }
                           >
-                            {chk.outcome === 'worked' ? 'Worked' : chk.issueType.replaceAll('_', ' ')}
+                            {chk.outcome === 'worked'
+                              ? 'Worked'
+                              : chk.issueType.replaceAll('_', ' ')}
                           </span>
                         </div>
                         <p className="text-[var(--cs-muted)] mt-0.5">
@@ -611,7 +614,6 @@ export function ChargingPage() {
                 </div>
               )}
 
-              {/* Check-in Submission Form */}
               <CheckInForm
                 stationId={selectedStation.id}
                 stationName={selectedStation.name}
@@ -620,7 +622,6 @@ export function ChargingPage() {
             </TonalCard>
           ) : null}
 
-          {/* Ranked Compatible List */}
           <TonalCard padding="sm" className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="font-display text-sm font-semibold flex items-center gap-2">
@@ -629,7 +630,7 @@ export function ChargingPage() {
                   Compatible Stations ({report?.recommendations.length ?? 0})
                 </span>
               </h3>
-              <DemoLabel kind="demo" />
+              <DemoLabel kind="live" />
             </div>
 
             {report && report.recommendations.length > 0 ? (
@@ -650,7 +651,8 @@ export function ChargingPage() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <div className="text-[11px] text-[var(--cs-muted)] tabular-nums">
-                            #{idx + 1} · {rec.station.corridorSegment} · {rec.distanceKm} km ({rec.etaMinutes} min)
+                            #{idx + 1} · {rec.station.corridorSegment} ·{' '}
+                            {rec.distanceKm} km ({rec.etaMinutes} min)
                           </div>
                           <p className="text-sm font-semibold text-[var(--cs-text)] truncate mt-0.5">
                             {rec.station.name}
@@ -667,7 +669,8 @@ export function ChargingPage() {
                         <span>₹{rec.station.pricePerKwhInr}/kWh</span>
                         <span aria-hidden="true">·</span>
                         <span>
-                          {rec.availableCompatibleBays}/{rec.totalCompatibleBays} bays free
+                          {rec.availableCompatibleBays}/
+                          {rec.totalCompatibleBays} bays
                         </span>
                       </div>
                     </button>
@@ -680,9 +683,8 @@ export function ChargingPage() {
                   No compatible stations match your current range &amp; filters.
                 </p>
                 <p>
-                  Try the 55% Battery Shortcut, loosen tariff/power filters, or
-                  toggle "Show Excluded" on the map to see why stations were
-                  filtered out.
+                  Try the 55% Scenario button, loosen tariff/power filters, or
+                  toggle "Show Excluded" on the map to inspect excluded hubs.
                 </p>
               </div>
             )}
