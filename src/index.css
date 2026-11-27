@@ -1,0 +1,165 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ============================================================================
+   ChargeSense Design Token Layer (Material 3 / Material You Inspired)
+   ============================================================================ */
+:root {
+  --font-display: 'Sora', system-ui, -apple-system, sans-serif;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  /* Light Theme Tokens */
+  --cs-surface: #F5F7FA;
+  --cs-surface-1: #FFFFFF;
+  --cs-surface-2: #EEF2F6;
+  --cs-surface-3: #E3E9F0;
+  --cs-outline: rgba(15, 23, 42, 0.10);
+  --cs-outline-strong: rgba(15, 23, 42, 0.18);
+  --cs-text: #0F172A;
+  --cs-muted: #526071;
+  --cs-primary: #0B8F67;
+  --cs-primary-ink: #FFFFFF;
+  --cs-primary-container: rgba(11, 143, 103, 0.12);
+  --cs-secondary: #3E5AE0;
+  --cs-secondary-container: rgba(62, 90, 224, 0.12);
+  --cs-warning: #B4690E;
+  --cs-warning-container: rgba(180, 105, 14, 0.12);
+  --cs-error: #C82843;
+  --cs-error-container: rgba(200, 40, 67, 0.12);
+
+  --cs-radius-card: 22px;
+  --cs-radius-lg: 18px;
+  --cs-radius-md: 14px;
+}
+
+.dark {
+  /* Dark Theme Tokens (Default) */
+  --cs-surface: #0B0D10;
+  --cs-surface-1: #14171B;
+  --cs-surface-2: #191D22;
+  --cs-surface-3: #20252B;
+  --cs-outline: rgba(255, 255, 255, 0.08);
+  --cs-outline-strong: rgba(255, 255, 255, 0.16);
+  --cs-text: #EAEEF2;
+  --cs-muted: #9AA5B1;
+  --cs-primary: #3DEBB0;
+  --cs-primary-ink: #041F15;
+  --cs-primary-container: rgba(61, 235, 176, 0.14);
+  --cs-secondary: #8DA6FF;
+  --cs-secondary-container: rgba(141, 166, 255, 0.14);
+  --cs-warning: #FFC876;
+  --cs-warning-container: rgba(255, 200, 118, 0.14);
+  --cs-error: #FF6B81;
+  --cs-error-container: rgba(255, 107, 129, 0.14);
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    background-color: var(--cs-surface);
+    color: var(--cs-text);
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--cs-surface);
+    color: var(--cs-text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+  }
+
+  .font-mono-nums {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Visible accessible focus rings */
+  :focus-visible {
+    outline: 2px solid var(--cs-primary);
+    outline-offset: 2px;
+  }
+}
+
+/* Material 3 Ripple Animation */
+@keyframes cs-ripple {
+  from {
+    transform: scale(0);
+    opacity: 0.32;
+  }
+  to {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+.cs-ripple-circle {
+  position: absolute;
+  border-radius: 9999px;
+  background-color: currentColor;
+  pointer-events: none;
+  animation: cs-ripple 480ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Screen transition */
+@keyframes cs-fade-slide {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.cs-page-enter {
+  animation: cs-fade-slide 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .cs-ripple-circle,
+  .cs-page-enter,
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Leaflet map integration with design tokens */
+.leaflet-container {
+  font-family: var(--font-sans);
+  background: var(--cs-surface-2);
+}
+
+.dark .leaflet-tile-pane {
+  filter: brightness(0.86) contrast(1.06) saturate(0.85);
+}
+
+.leaflet-tooltip {
+  background-color: var(--cs-surface-1);
+  color: var(--cs-text);
+  border: 1px solid var(--cs-outline-strong);
+  border-radius: 10px;
+  font-size: 12px;
+  padding: 6px 10px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+}
+
+.leaflet-tooltip-top:before {
+  border-top-color: var(--cs-surface-1);
+}
+

@@ -1,0 +1,6 @@
+{
+  "name": "ChargeSense: EV Intelligence & Ownership OS",
+  "description": "Unified explainable decision layer for EV charging, range estimation, battery health, trip planning, and digital records along the Bengaluru–Mysuru corridor.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
